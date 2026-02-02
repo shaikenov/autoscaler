@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	testprovider "k8s.io/autoscaler/cluster-autoscaler/cloudprovider/test"
@@ -96,6 +97,7 @@ func TestNodePoolAsyncInitialization(t *testing.T) {
 	upcomingNodeGroup := provider.BuildNodeGroup("upcoming-ng", 0, 100, 0, false, true, "T1", nil)
 	options := config.AutoscalingOptions{AsyncNodeGroupsEnabled: true}
 	processors, templateNodeInfoRegistry := processorstest.NewTestProcessors(options)
+
 	context, err := NewScaleTestAutoscalingContext(options, &fake.Clientset{}, listers, provider, nil, nil, templateNodeInfoRegistry)
 	assert.NoError(t, err)
 	option := expander.Option{NodeGroup: upcomingNodeGroup, Pods: []*apiv1.Pod{pod}}
@@ -128,4 +130,8 @@ func (f *fakeScaleUpStatusProcessor) Process(_ *ca_context.AutoscalingContext, s
 }
 
 func (f *fakeScaleUpStatusProcessor) CleanUp() {
+}
+
+type mockMetrics struct {
+	mock.Mock
 }

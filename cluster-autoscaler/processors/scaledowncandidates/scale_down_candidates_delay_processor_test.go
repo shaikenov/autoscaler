@@ -98,9 +98,9 @@ func TestGetScaleDownCandidates(t *testing.T) {
 				ng3 := test.NewTestNodeGroup("ng-3", 0, 0, 0, false, false, "", nil, nil)
 
 				// in cool down
-				p.RegisterScaleUp(ng2, 0, time.Now().Add(-time.Minute*5))
+				p.RegisterScaleUp(ng2, 0, time.Now().Add(-time.Minute*5), "", "")
 				// not in cool down anymore
-				p.RegisterScaleUp(ng3, 0, time.Now().Add(-time.Minute*11))
+				p.RegisterScaleUp(ng3, 0, time.Now().Add(-time.Minute*11), "", "")
 				return p
 			},
 		},

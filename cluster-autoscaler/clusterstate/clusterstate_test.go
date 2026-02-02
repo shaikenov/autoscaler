@@ -76,12 +76,15 @@ func TestOKWithScaleUp(t *testing.T) {
 	assert.NotNil(t, provider)
 
 	fakeClient := &fake.Clientset{}
+	mockMetrics := &mockMetrics{}
+	mockMetrics.On("RegisterScaleUp", mock.Anything, mock.Anything, mock.Anything).Return()
 	fakeLogRecorder, _ := utils.NewStatusMapRecorder(fakeClient, "kube-system", kube_record.NewFakeRecorder(5), false, "my-cool-configmap")
-	clusterstate := NewClusterStateRegistry(provider, ClusterStateRegistryConfig{
+	clusterstate := newClusterStateRegistryWithMetrics(provider, ClusterStateRegistryConfig{
 		MaxTotalUnreadyPercentage: 10,
 		OkTotalUnreadyCount:       1,
-	}, fakeLogRecorder, newBackoff(), nodegroupconfig.NewDefaultNodeGroupConfigProcessor(config.NodeGroupAutoscalingOptions{MaxNodeProvisionTime: time.Minute}), asyncnodegroups.NewDefaultAsyncNodeGroupStateChecker(), nodegroupchange.NewNodeGroupChangeObserversList())
-	clusterstate.RegisterScaleUp(provider.GetNodeGroup("ng1"), 4, time.Now())
+	}, fakeLogRecorder, newBackoff(), nodegroupconfig.NewDefaultNodeGroupConfigProcessor(config.NodeGroupAutoscalingOptions{MaxNodeProvisionTime: time.Minute}), asyncnodegroups.NewDefaultAsyncNodeGroupStateChecker(), nodegroupchange.NewNodeGroupChangeObserversList(), mockMetrics)
+	clusterstate.scaleStateNotifier.RegisterScaleUp(provider.GetNodeGroup("ng1"), 4, time.Now(), "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", 4, "", "")
 	err := clusterstate.UpdateNodes([]*apiv1.Node{ng1_1, ng2_1}, nil, now)
 	assert.NoError(t, err)
 	assert.True(t, clusterstate.IsClusterHealthy())
@@ -114,11 +117,13 @@ func TestEmptyOK(t *testing.T) {
 	assert.NotNil(t, provider)
 
 	fakeClient := &fake.Clientset{}
+	mockMetrics := &mockMetrics{}
+	mockMetrics.On("RegisterScaleUp", mock.Anything, mock.Anything, mock.Anything).Return()
 	fakeLogRecorder, _ := utils.NewStatusMapRecorder(fakeClient, "kube-system", kube_record.NewFakeRecorder(5), false, "my-cool-configmap")
-	clusterstate := NewClusterStateRegistry(provider, ClusterStateRegistryConfig{
+	clusterstate := newClusterStateRegistryWithMetrics(provider, ClusterStateRegistryConfig{
 		MaxTotalUnreadyPercentage: 10,
 		OkTotalUnreadyCount:       1,
-	}, fakeLogRecorder, newBackoff(), nodegroupconfig.NewDefaultNodeGroupConfigProcessor(config.NodeGroupAutoscalingOptions{MaxNodeProvisionTime: time.Minute}), asyncnodegroups.NewDefaultAsyncNodeGroupStateChecker(), nodegroupchange.NewNodeGroupChangeObserversList())
+	}, fakeLogRecorder, newBackoff(), nodegroupconfig.NewDefaultNodeGroupConfigProcessor(config.NodeGroupAutoscalingOptions{MaxNodeProvisionTime: time.Minute}), asyncnodegroups.NewDefaultAsyncNodeGroupStateChecker(), nodegroupchange.NewNodeGroupChangeObserversList(), mockMetrics)
 	err := clusterstate.UpdateNodes([]*apiv1.Node{}, nil, now.Add(-5*time.Second))
 	assert.NoError(t, err)
 	assert.True(t, clusterstate.IsClusterHealthy())
@@ -128,7 +133,8 @@ func TestEmptyOK(t *testing.T) {
 	assert.False(t, clusterstate.HasNodeGroupStartedScaleUp("ng1"))
 
 	provider.AddNodeGroup("ng1", 0, 10, 3)
-	clusterstate.RegisterScaleUp(provider.GetNodeGroup("ng1"), 3, now.Add(-3*time.Second))
+	clusterstate.scaleStateNotifier.RegisterScaleUp(provider.GetNodeGroup("ng1"), 3, now.Add(-3*time.Second), "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", 3, "", "")
 	//	clusterstate.scaleUpRequests["ng1"].Time = now.Add(-3 * time.Second)
 	//	clusterstate.scaleUpRequests["ng1"].ExpectedAddTime = now.Add(1 * time.Minute)
 	err = clusterstate.UpdateNodes([]*apiv1.Node{}, nil, now)
@@ -157,17 +163,20 @@ func TestHasNodeGroupStartedScaleUp(t *testing.T) {
 			provider.AddNodeGroup("ng1", 0, 5, tc.initialSize)
 			fakeClient := &fake.Clientset{}
 			fakeLogRecorder, _ := utils.NewStatusMapRecorder(fakeClient, "kube-system", kube_record.NewFakeRecorder(5), false, "my-cool-configmap")
-			clusterstate := NewClusterStateRegistry(provider, ClusterStateRegistryConfig{
+			mockMetrics := &mockMetrics{}
+			mockMetrics.On("RegisterScaleUp", mock.Anything, mock.Anything, mock.Anything).Return()
+			clusterstate := newClusterStateRegistryWithMetrics(provider, ClusterStateRegistryConfig{
 				MaxTotalUnreadyPercentage: 10,
 				OkTotalUnreadyCount:       1,
-			}, fakeLogRecorder, newBackoff(), nodegroupconfig.NewDefaultNodeGroupConfigProcessor(config.NodeGroupAutoscalingOptions{MaxNodeProvisionTime: time.Minute}), asyncnodegroups.NewDefaultAsyncNodeGroupStateChecker(), nodegroupchange.NewNodeGroupChangeObserversList())
+			}, fakeLogRecorder, newBackoff(), nodegroupconfig.NewDefaultNodeGroupConfigProcessor(config.NodeGroupAutoscalingOptions{MaxNodeProvisionTime: time.Minute}), asyncnodegroups.NewDefaultAsyncNodeGroupStateChecker(), nodegroupchange.NewNodeGroupChangeObserversList(), mockMetrics)
 			err := clusterstate.UpdateNodes([]*apiv1.Node{}, nil, now.Add(-5*time.Second))
 			assert.NoError(t, err)
 			assert.False(t, clusterstate.IsNodeGroupScalingUp("ng1"))
 			assert.False(t, clusterstate.HasNodeGroupStartedScaleUp("ng1"))
 
 			provider.AddNodeGroup("ng1", 0, 5, tc.initialSize+tc.delta)
-			clusterstate.RegisterScaleUp(provider.GetNodeGroup("ng1"), tc.delta, now.Add(-3*time.Second))
+			clusterstate.scaleStateNotifier.RegisterScaleUp(provider.GetNodeGroup("ng1"), tc.delta, now.Add(-3*time.Second), "", "")
+			mockMetrics.AssertCalled(t, "RegisterScaleUp", tc.delta, "", "")
 			err = clusterstate.UpdateNodes([]*apiv1.Node{}, nil, now)
 			assert.NoError(t, err)
 			assert.True(t, clusterstate.IsNodeGroupScalingUp("ng1"))
@@ -554,6 +563,7 @@ func TestExpiredScaleUp(t *testing.T) {
 
 	fakeClient := &fake.Clientset{}
 	mockMetrics := &mockMetrics{}
+	mockMetrics.On("RegisterScaleUp", mock.Anything, mock.Anything, mock.Anything).Return()
 	mockMetrics.On("RegisterFailedScaleUp", mock.Anything, mock.Anything, mock.Anything).Return()
 	fakeLogRecorder, _ := utils.NewStatusMapRecorder(fakeClient, "kube-system", kube_record.NewFakeRecorder(5), false, "my-cool-configmap")
 	clusterstate := newClusterStateRegistryWithMetrics(provider, ClusterStateRegistryConfig{
@@ -561,7 +571,8 @@ func TestExpiredScaleUp(t *testing.T) {
 		OkTotalUnreadyCount:       1,
 	}, fakeLogRecorder, newBackoff(), nodegroupconfig.NewDefaultNodeGroupConfigProcessor(config.NodeGroupAutoscalingOptions{MaxNodeProvisionTime: 2 * time.Minute}), asyncnodegroups.NewDefaultAsyncNodeGroupStateChecker(), nodegroupchange.NewNodeGroupChangeObserversList(), mockMetrics)
 
-	clusterstate.RegisterScaleUp(provider.GetNodeGroup("ng1"), 4, now.Add(-3*time.Minute))
+	clusterstate.scaleStateNotifier.RegisterScaleUp(provider.GetNodeGroup("ng1"), 4, now.Add(-3*time.Minute), "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", 4, "", "")
 	err := clusterstate.UpdateNodes([]*apiv1.Node{ng1_1}, nil, now)
 	assert.NoError(t, err)
 	mockMetrics.AssertCalled(t, "RegisterFailedScaleUp", metrics.Timeout, "", "")
@@ -601,10 +612,12 @@ func TestNodeGroupScaleUpTime(t *testing.T) {
 
 	fakeClient := &fake.Clientset{}
 	fakeLogRecorder, _ := utils.NewStatusMapRecorder(fakeClient, "kube-system", kube_record.NewFakeRecorder(5), false, "my-cool-configmap")
-	clusterstate := NewClusterStateRegistry(provider, ClusterStateRegistryConfig{
+	mockMetrics := &mockMetrics{}
+	mockMetrics.On("RegisterScaleUp", mock.Anything, mock.Anything, mock.Anything).Return()
+	clusterstate := newClusterStateRegistryWithMetrics(provider, ClusterStateRegistryConfig{
 		MaxTotalUnreadyPercentage: 10,
 		OkTotalUnreadyCount:       1,
-	}, fakeLogRecorder, newBackoff(), nodegroupconfig.NewDefaultNodeGroupConfigProcessor(config.NodeGroupAutoscalingOptions{MaxNodeProvisionTime: 15 * time.Minute}), asyncnodegroups.NewDefaultAsyncNodeGroupStateChecker(), nodegroupchange.NewNodeGroupChangeObserversList())
+	}, fakeLogRecorder, newBackoff(), nodegroupconfig.NewDefaultNodeGroupConfigProcessor(config.NodeGroupAutoscalingOptions{MaxNodeProvisionTime: 15 * time.Minute}), asyncnodegroups.NewDefaultAsyncNodeGroupStateChecker(), nodegroupchange.NewNodeGroupChangeObserversList(), mockMetrics)
 
 	// nil node group
 	_, err := clusterstate.NodeGroupScaleUpTime(nil)
@@ -619,7 +632,8 @@ func TestNodeGroupScaleUpTime(t *testing.T) {
 
 	// node group currently being scaled up
 	wantScaleUpTime := time.Now()
-	clusterstate.RegisterScaleUp(ng, 1, wantScaleUpTime)
+	clusterstate.scaleStateNotifier.RegisterScaleUp(ng, 1, wantScaleUpTime, "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", 1, "", "")
 
 	gotScaleUpTime, err := clusterstate.NodeGroupScaleUpTime(ng)
 	assert.NoError(t, err)
@@ -924,6 +938,7 @@ func TestScaleUpBackoff(t *testing.T) {
 
 	fakeClient := &fake.Clientset{}
 	mockMetrics := &mockMetrics{}
+	mockMetrics.On("RegisterScaleUp", mock.Anything, mock.Anything, mock.Anything).Return()
 	mockMetrics.On("RegisterFailedScaleUp", mock.Anything, mock.Anything, mock.Anything).Return()
 	fakeLogRecorder, _ := utils.NewStatusMapRecorder(fakeClient, "kube-system", kube_record.NewFakeRecorder(5), false, "my-cool-configmap")
 	clusterstate := newClusterStateRegistryWithMetrics(provider, ClusterStateRegistryConfig{
@@ -933,7 +948,8 @@ func TestScaleUpBackoff(t *testing.T) {
 		asyncnodegroups.NewDefaultAsyncNodeGroupStateChecker(), nodegroupchange.NewNodeGroupChangeObserversList(), mockMetrics)
 
 	// After failed scale-up, node group should be still healthy, but should backoff from scale-ups
-	clusterstate.RegisterScaleUp(provider.GetNodeGroup("ng1"), 1, now.Add(-180*time.Second))
+	clusterstate.scaleStateNotifier.RegisterScaleUp(provider.GetNodeGroup("ng1"), 1, now.Add(-180*time.Second), "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", 1, "", "")
 	err := clusterstate.UpdateNodes([]*apiv1.Node{ng1_1, ng1_2, ng1_3}, nil, now)
 	assert.NoError(t, err)
 	mockMetrics.AssertCalled(t, "RegisterFailedScaleUp", metrics.Timeout, "", "")
@@ -966,7 +982,8 @@ func TestScaleUpBackoff(t *testing.T) {
 	assert.Equal(t, NodeGroupScalingSafety{SafeToScale: true, Healthy: true}, clusterstate.NodeGroupScaleUpSafety(ng1, now))
 
 	// Another failed scale up should cause longer backoff
-	clusterstate.RegisterScaleUp(provider.GetNodeGroup("ng1"), 1, now.Add(-121*time.Second))
+	clusterstate.scaleStateNotifier.RegisterScaleUp(provider.GetNodeGroup("ng1"), 1, now.Add(-121*time.Second), "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", 1, "", "")
 
 	err = clusterstate.UpdateNodes([]*apiv1.Node{ng1_1, ng1_2, ng1_3}, nil, now)
 	assert.NoError(t, err)
@@ -1000,7 +1017,8 @@ func TestScaleUpBackoff(t *testing.T) {
 	}, clusterstate.NodeGroupScaleUpSafety(ng1, now))
 
 	// After successful scale-up, node group should still be backed off
-	clusterstate.RegisterScaleUp(provider.GetNodeGroup("ng1"), 1, now)
+	clusterstate.scaleStateNotifier.RegisterScaleUp(provider.GetNodeGroup("ng1"), 1, now, "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", 1, "", "")
 	ng1_4 := BuildTestNode("ng1-4", 1000, 1000)
 	SetNodeReadyState(ng1_4, true, now.Add(-1*time.Minute))
 	provider.AddNode("ng1", ng1_4)
@@ -1095,7 +1113,9 @@ func TestUpdateScaleUp(t *testing.T) {
 	provider.AddNodeGroup("ng2", 1, 10, 5)
 	fakeClient := &fake.Clientset{}
 	fakeLogRecorder, _ := utils.NewStatusMapRecorder(fakeClient, "kube-system", kube_record.NewFakeRecorder(5), false, "my-cool-configmap")
-	clusterstate := NewClusterStateRegistry(
+	mockMetrics := &mockMetrics{}
+	mockMetrics.On("RegisterScaleUp", mock.Anything, mock.Anything, mock.Anything).Return()
+	clusterstate := newClusterStateRegistryWithMetrics(
 		provider,
 		ClusterStateRegistryConfig{
 			MaxTotalUnreadyPercentage: 10,
@@ -1106,32 +1126,38 @@ func TestUpdateScaleUp(t *testing.T) {
 		nodegroupconfig.NewDefaultNodeGroupConfigProcessor(config.NodeGroupAutoscalingOptions{MaxNodeProvisionTime: 10 * time.Second}),
 		asyncnodegroups.NewDefaultAsyncNodeGroupStateChecker(),
 		nodegroupchange.NewNodeGroupChangeObserversList(),
+		mockMetrics,
 	)
 
 	// Test cases for `RegisterScaleUp`
-	clusterstate.RegisterScaleUp(provider.GetNodeGroup("ng1"), 100, now)
+	clusterstate.scaleStateNotifier.RegisterScaleUp(provider.GetNodeGroup("ng1"), 100, now, "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", 100, "", "")
 	assert.Equal(t, clusterstate.scaleUpRequests["ng1"].Increase, 100)
 	assert.Equal(t, clusterstate.scaleUpRequests["ng1"].Time, now)
 	assert.Equal(t, clusterstate.scaleUpRequests["ng1"].ExpectedAddTime, now.Add(10*time.Second))
 
 	// expect no change of times on negative delta
-	clusterstate.RegisterScaleUp(provider.GetNodeGroup("ng1"), -20, later)
+	clusterstate.scaleStateNotifier.RegisterScaleUp(provider.GetNodeGroup("ng1"), -20, later, "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", -20, "", "")
 	assert.Equal(t, clusterstate.scaleUpRequests["ng1"].Increase, 80)
 	assert.Equal(t, clusterstate.scaleUpRequests["ng1"].Time, now)
 	assert.Equal(t, clusterstate.scaleUpRequests["ng1"].ExpectedAddTime, now.Add(10*time.Second))
 
 	// update times on positive delta
-	clusterstate.RegisterScaleUp(provider.GetNodeGroup("ng1"), 30, later)
+	clusterstate.scaleStateNotifier.RegisterScaleUp(provider.GetNodeGroup("ng1"), 30, later, "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", 30, "", "")
 	assert.Equal(t, clusterstate.scaleUpRequests["ng1"].Increase, 110)
 	assert.Equal(t, clusterstate.scaleUpRequests["ng1"].Time, later)
 	assert.Equal(t, clusterstate.scaleUpRequests["ng1"].ExpectedAddTime, later.Add(10*time.Second))
 
 	// if we get below 0 scalup is deleted
-	clusterstate.RegisterScaleUp(provider.GetNodeGroup("ng1"), -200, now)
+	clusterstate.scaleStateNotifier.RegisterScaleUp(provider.GetNodeGroup("ng1"), -200, now, "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", -200, "", "")
 	assert.Nil(t, clusterstate.scaleUpRequests["ng1"])
 
 	// If new scalup is registered with negative delta nothing should happen
-	clusterstate.RegisterScaleUp(provider.GetNodeGroup("ng1"), -200, now)
+	clusterstate.scaleStateNotifier.RegisterScaleUp(provider.GetNodeGroup("ng1"), -200, now, "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", -200, "", "")
 	assert.Nil(t, clusterstate.scaleUpRequests["ng1"])
 }
 
@@ -1679,9 +1705,11 @@ func TestHandleInstanceCreationErrors(t *testing.T) {
 	fakeClient := &fake.Clientset{}
 	fakeLogRecorder, _ := utils.NewStatusMapRecorder(fakeClient, "kube-system", kube_record.NewFakeRecorder(5), false, "my-cool-configmap")
 	mockMetrics := &mockMetrics{}
+	mockMetrics.On("RegisterScaleUp", mock.Anything, mock.Anything, mock.Anything).Return()
 	mockMetrics.On("RegisterFailedScaleUp", mock.Anything, mock.Anything, mock.Anything).Return()
 	clusterstate := newClusterStateRegistryWithMetrics(provider, ClusterStateRegistryConfig{}, fakeLogRecorder, newBackoff(), nodegroupconfig.NewDefaultNodeGroupConfigProcessor(config.NodeGroupAutoscalingOptions{MaxNodeProvisionTime: 15 * time.Minute}), asyncnodegroups.NewDefaultAsyncNodeGroupStateChecker(), nodegroupchange.NewNodeGroupChangeObserversList(), mockMetrics)
-	clusterstate.RegisterScaleUp(mockedNodeGroup, 1, now)
+	clusterstate.scaleStateNotifier.RegisterScaleUp(mockedNodeGroup, 1, now, "", "")
+	mockMetrics.AssertCalled(t, "RegisterScaleUp", 1, "", "")
 
 	// UpdateNodes will trigger handleInstanceCreationErrors
 	err := clusterstate.UpdateNodes([]*apiv1.Node{}, nil, now)
@@ -1691,6 +1719,10 @@ func TestHandleInstanceCreationErrors(t *testing.T) {
 
 type mockMetrics struct {
 	mock.Mock
+}
+
+func (m *mockMetrics) RegisterScaleUp(nodesCount int, gpuResourceName, gpuType string) {
+	m.Called(nodesCount, gpuResourceName, gpuType)
 }
 
 func (m *mockMetrics) RegisterFailedScaleUp(reason metrics.FailedScaleUpReason, gpuResourceName, gpuType string) {

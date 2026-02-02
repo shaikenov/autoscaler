@@ -199,7 +199,7 @@ func (csr *ClusterStateRegistry) Stop() {
 }
 
 // RegisterScaleUp registers scale-up for give node group
-func (csr *ClusterStateRegistry) RegisterScaleUp(nodeGroup cloudprovider.NodeGroup, delta int, currentTime time.Time) {
+func (csr *ClusterStateRegistry) RegisterScaleUp(nodeGroup cloudprovider.NodeGroup, delta int, currentTime time.Time, _, _ string) {
 	csr.Lock()
 	defer csr.Unlock()
 	csr.registerOrUpdateScaleUpNoLock(nodeGroup, delta, currentTime)

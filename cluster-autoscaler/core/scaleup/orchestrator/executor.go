@@ -27,7 +27,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	"k8s.io/autoscaler/cluster-autoscaler/metrics"
 	"k8s.io/autoscaler/cluster-autoscaler/observers/nodegroupchange"
 	"k8s.io/autoscaler/cluster-autoscaler/processors/nodegroups/asyncnodegroups"
 	"k8s.io/autoscaler/cluster-autoscaler/processors/nodegroupset"
@@ -183,8 +182,7 @@ func (e *scaleUpExecutor) executeScaleUp(
 		// the node group is created, during initial scale up.
 		return nil
 	}
-	e.scaleStateNotifier.RegisterScaleUp(info.Group, increase, time.Now())
-	metrics.RegisterScaleUp(increase, gpuResourceName, gpuType)
+	e.scaleStateNotifier.RegisterScaleUp(info.Group, increase, time.Now(), gpuResourceName, gpuType)
 	e.autoscalingCtx.LogRecorder.Eventf(apiv1.EventTypeNormal, "ScaledUpGroup",
 		"Scale-up: group %s size set to %d instead of %d (max: %d)", info.Group.Id(), info.NewSize, info.CurrentSize, info.MaxSize)
 	return nil

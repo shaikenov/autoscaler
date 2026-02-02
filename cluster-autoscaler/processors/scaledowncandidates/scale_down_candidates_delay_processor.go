@@ -93,7 +93,7 @@ func (p *ScaleDownCandidatesDelayProcessor) CleanUp() {
 
 // RegisterScaleUp records when the last scale up happened for a nodegroup.
 func (p *ScaleDownCandidatesDelayProcessor) RegisterScaleUp(nodeGroup cloudprovider.NodeGroup,
-	_ int, currentTime time.Time) {
+	_ int, currentTime time.Time, _, _ string) {
 	p.scaleUps[nodeGroup.Id()] = currentTime
 }
 

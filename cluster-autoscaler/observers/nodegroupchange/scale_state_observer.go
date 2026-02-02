@@ -31,7 +31,7 @@ import (
 // * scale-down failure(s) for a nodegroup
 type NodeGroupChangeObserver interface {
 	// RegisterScaleUp records scale up for a nodegroup.
-	RegisterScaleUp(nodeGroup cloudprovider.NodeGroup, delta int, currentTime time.Time)
+	RegisterScaleUp(nodeGroup cloudprovider.NodeGroup, delta int, currentTime time.Time, gpuResourceName, gpuType string)
 	// RegisterScaleDowns records scale down for a nodegroup.
 	RegisterScaleDown(nodeGroup cloudprovider.NodeGroup, nodeName string, currentTime time.Time, expectedDeleteTime time.Time)
 	// RegisterFailedScaleUp records failed scale-up for a nodegroup.
@@ -56,11 +56,11 @@ func (l *NodeGroupChangeObserversList) Register(o NodeGroupChangeObserver) {
 
 // RegisterScaleUp calls RegisterScaleUp for each observer.
 func (l *NodeGroupChangeObserversList) RegisterScaleUp(nodeGroup cloudprovider.NodeGroup,
-	delta int, currentTime time.Time) {
+	delta int, currentTime time.Time, gpuResourceName, gpuType string) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 	for _, observer := range l.observers {
-		observer.RegisterScaleUp(nodeGroup, delta, currentTime)
+		observer.RegisterScaleUp(nodeGroup, delta, currentTime, gpuResourceName, gpuType)
 	}
 }
 
@@ -100,6 +100,7 @@ func NewNodeGroupChangeObserversList() *NodeGroupChangeObserversList {
 }
 
 type metricObserver interface {
+	RegisterScaleUp(nodesCount int, gpuResourceName, gpuType string)
 	RegisterFailedScaleUp(reason metrics.FailedScaleUpReason, gpuResourceName, gpuType string)
 }
 
@@ -111,7 +112,8 @@ type NodeGroupChangeMetricsProducer struct {
 
 // RegisterScaleUp calls RegisterScaleUp for each observer.
 func (p *NodeGroupChangeMetricsProducer) RegisterScaleUp(nodeGroup cloudprovider.NodeGroup,
-	delta int, currentTime time.Time) {
+	delta int, currentTime time.Time, gpuResourceName, gpuType string) {
+	p.metrics.RegisterScaleUp(delta, gpuResourceName, gpuType)
 }
 
 // RegisterScaleDown calls RegisterScaleDown for each observer.
